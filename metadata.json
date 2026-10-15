@@ -1,0 +1,8 @@
+{
+  "name": "MediConnect HMS",
+  "description": "A comprehensive, modern Healthcare Management System (HMS) designed to streamline hospital operations, enhance patient care, and provide secure access to medical information for patients, doctors, and administrators.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

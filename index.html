@@ -1,0 +1,71 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MediConnect HMS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class', // Enable class-based dark mode
+        theme: {
+          extend: {
+            colors: {
+              primary: '#0057A8', // A professional blue
+              secondary: '#00A859', // A calm green
+              accent: '#F0B429', // A warm accent color
+              light: '#F5F9FF', // A very light blue for backgrounds
+              dark: {
+                bg: '#1a202c', // Dark background
+                card: '#2d3748', // Dark card background
+                text: '#e2e8f0', // Light text for dark mode
+                border: '#4a5568', // Dark border
+              }
+            },
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+            animation: {
+              fadeIn: 'fadeIn 0.3s ease-in-out',
+              gradientShift: 'gradientShift 15s ease infinite',
+            },
+            keyframes: {
+              fadeIn: {
+                '0%': { opacity: 0 },
+                '100%': { opacity: 1 },
+              },
+              gradientShift: {
+                '0%, 100%': { backgroundPosition: '0% 50%' },
+                '50%': { backgroundPosition: '100% 50%' },
+              },
+            },
+            boxShadow: {
+              'glow-primary': '0 0 10px rgba(0, 87, 168, 0.4), 0 0 20px rgba(0, 87, 168, 0.2)',
+              'glow-primary-hover': '0 0 20px rgba(0, 87, 168, 0.7), 0 0 30px rgba(0, 136, 254, 0.5)',
+              'glow-secondary': '0 0 10px rgba(0, 168, 89, 0.4), 0 0 20px rgba(0, 168, 89, 0.2)',
+              'glow-secondary-hover': '0 0 20px rgba(0, 168, 89, 0.7), 0 0 30px rgba(0, 200, 100, 0.5)',
+            }
+          }
+        }
+      }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+  <body>
+    <script>
+      // Prevents flash of incorrect theme
+      (function() {
+        if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      })();
+    </script>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
