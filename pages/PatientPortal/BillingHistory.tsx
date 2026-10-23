@@ -1,16 +1,51 @@
 import React from 'react';
 import { MOCK_BILLS } from '../../constants';
-import type { Bill, User } from '../../types';
+import type { Bill, User, Invoice } from '../../types';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import EmptyState from '../../components/Common/EmptyState';
+import { formatDisplayDate } from '../../services/dataSanitizer';
+import { saveInvoice as dbSaveInvoice } from '../../services/database';
 
 interface BillingHistoryProps {
   patientId: string;
   user: User;
+  invoices?: Invoice[];
+  setInvoices?: React.Dispatch<React.SetStateAction<Invoice[]>>;
 }
 
-const BillingHistory: React.FC<BillingHistoryProps> = ({ patientId, user }) => {
-  const bills = MOCK_BILLS.filter(bill => bill.patientId === patientId);
+const BillingHistory: React.FC<BillingHistoryProps> = ({ patientId, user, invoices, setInvoices }) => {
+  const patientInvoicesAsBills: Bill[] = (invoices || [])
+    .filter(inv => inv.patientId === patientId || inv.patientName.toLowerCase() === user.name.toLowerCase())
+    .map(inv => ({
+      id: inv.id,
+      patientId: inv.patientId,
+      date: inv.issueDate,
+      service: inv.items.map(i => i.description).join(', ') || `Invoice ${inv.invoiceNumber}`,
+      amount: inv.totalAmount,
+      status: (inv.status === 'Paid' ? 'Paid' : 'Due') as 'Paid' | 'Due'
+    }));
+
+  const mockBills = MOCK_BILLS.filter(bill => bill.patientId === patientId);
+  // Merge and deduplicate by ID
+  const allBillsMap = new Map<string, Bill>();
+  mockBills.forEach(b => allBillsMap.set(b.id, b));
+  patientInvoicesAsBills.forEach(b => allBillsMap.set(b.id, b));
+  const bills = Array.from(allBillsMap.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  const handlePayBill = (billId: string) => {
+    if (setInvoices && invoices) {
+      setInvoices(prev => prev.map(inv => {
+        if (inv.id === billId) {
+          const updated: Invoice = { ...inv, status: 'Paid' };
+          dbSaveInvoice(updated);
+          return updated;
+        }
+        return inv;
+      }));
+    }
+    alert("Payment successful! Your invoice has been marked as Paid.");
+  };
   
   const handleDownloadPdf = (bill: Bill) => {
     try {
@@ -116,27 +151,39 @@ const BillingHistory: React.FC<BillingHistoryProps> = ({ patientId, user }) => {
             </tr>
           </thead>
           <tbody className="text-gray-700 dark:text-dark-text">
-            {bills.map(bill => (
-              <tr key={bill.id} className="border-b border-gray-200 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-bg">
-                <td className="py-3 px-4">{new Date(bill.date).toLocaleDateString()}</td>
-                <td className="py-3 px-4">{bill.service}</td>
-                <td className="py-3 px-4">${bill.amount.toFixed(2)}</td>
-                <td className="py-3 px-4">
-                  <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                    bill.status === 'Paid' ? 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300'
-                  }`}>
-                    {bill.status}
-                  </span>
-                </td>
-                <td className="py-3 px-4">
-                  {bill.status === 'Due' ? (
-                    <button className="bg-secondary text-white font-semibold py-1 px-3 rounded-md text-sm hover:bg-green-600">Pay Now</button>
-                  ) : (
-                    <button onClick={() => handleDownloadPdf(bill)} className="text-primary dark:text-blue-400 font-semibold hover:underline text-sm">Download PDF</button>
-                  )}
+            {bills.length > 0 ? (
+              bills.map(bill => (
+                <tr key={bill.id} className="border-b border-gray-200 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-bg">
+                  <td className="py-3 px-4">{formatDisplayDate(bill.date)}</td>
+                  <td className="py-3 px-4">{bill.service}</td>
+                  <td className="py-3 px-4">${Number(bill.amount || 0).toFixed(2)}</td>
+                  <td className="py-3 px-4">
+                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                      bill.status === 'Paid' ? 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300'
+                    }`}>
+                      {bill.status}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">
+                    {bill.status === 'Due' ? (
+                      <button onClick={() => handlePayBill(bill.id)} className="bg-secondary text-white font-semibold py-1 px-3 rounded-md text-sm hover:bg-green-600 transition">Pay Now</button>
+                    ) : (
+                      <button onClick={() => handleDownloadPdf(bill)} className="text-primary dark:text-blue-400 font-semibold hover:underline text-sm">Download PDF</button>
+                    )}
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={5} className="py-8">
+                  <EmptyState
+                    icon="💳"
+                    title="No billing statements found"
+                    description="You have no outstanding or historical invoices on file."
+                  />
                 </td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </div>

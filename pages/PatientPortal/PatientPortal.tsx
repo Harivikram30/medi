@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import type { User, Appointment, Prescription, LabTest } from '../../types';
+import type { User, Appointment, Prescription, LabTest, Invoice } from '../../types';
 import Appointments from './Appointments';
 import MedicalRecords from './MedicalRecords';
 import BillingHistory from './BillingHistory';
@@ -19,6 +19,8 @@ interface PatientPortalProps {
   setAppointments: React.Dispatch<React.SetStateAction<Appointment[]>>;
   prescriptions: Prescription[];
   labTests: LabTest[];
+  invoices?: Invoice[];
+  setInvoices?: React.Dispatch<React.SetStateAction<Invoice[]>>;
   onNavigate?: (page: any) => void;
 }
 
@@ -29,27 +31,40 @@ const PatientDashboardSummary: React.FC<{
   setActiveTab: (tab: PatientTab) => void;
   appointments: Appointment[];
   prescriptions: Prescription[];
+  invoices?: Invoice[];
+  labTests?: LabTest[];
   queueEntry?: QueueEntry;
   onOpenAlertModal: () => void;
   onAcknowledgeAlert: () => void;
   onNavigate?: (page: any) => void;
-}> = ({ user, setActiveTab, appointments, prescriptions, queueEntry, onOpenAlertModal, onAcknowledgeAlert, onNavigate }) => {
-    const nextAppointment = appointments
-        .filter(app => app.patientId === user.id && app.status === 'Upcoming')
+}> = ({ user, setActiveTab, appointments, prescriptions, invoices, labTests, queueEntry, onOpenAlertModal, onAcknowledgeAlert, onNavigate }) => {
+    const safeInvoices = invoices || [];
+    const safeLabTests = labTests || [];
+
+    const nextAppointment = (appointments || [])
+        .filter(app => app && app.patientId === user?.id && app.status === 'Upcoming')
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
 
-    const recentRecord = MOCK_RECORDS
-        .filter(rec => rec.patientId === user.id)
+    const recentLab = safeLabTests
+        .filter(test => test && test.patientName && test.patientName.toLowerCase() === user?.name?.toLowerCase())
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
 
-    const outstandingBill = MOCK_BILLS
-        .filter(bill => bill.patientId === user.id && bill.status === 'Due')
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+    const recentRecord = recentLab
+        ? { title: recentLab.testType, date: recentLab.date }
+        : (MOCK_RECORDS || []).filter(rec => rec && rec.patientId === user?.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+
+    const outstandingInvoice = safeInvoices
+        .filter(inv => inv && (inv.patientId === user?.id || (inv.patientName && inv.patientName.toLowerCase() === user?.name?.toLowerCase())) && inv.status !== 'Paid')
+        .sort((a, b) => new Date(b.issueDate).getTime() - new Date(a.issueDate).getTime())[0];
         
-    const wellnessEntryCount = MOCK_WELLNESS_DATA.filter(w => w.patientId === user.id).length;
+    const outstandingBill = outstandingInvoice
+        ? { service: outstandingInvoice.items?.[0]?.description || `Invoice ${outstandingInvoice.invoiceNumber}`, amount: outstandingInvoice.totalAmount }
+        : (MOCK_BILLS || []).filter(bill => bill && bill.patientId === user?.id && bill.status === 'Due').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+        
+    const wellnessEntryCount = (MOCK_WELLNESS_DATA || []).filter(w => w && w.patientId === user?.id).length;
 
-    const latestPrescription = prescriptions
-        .filter(p => p.status === 'Active')
+    const latestPrescription = (prescriptions || [])
+        .filter(p => p && p.patientId === user?.id && p.status === 'Active')
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
 
     return (
@@ -202,7 +217,7 @@ const PatientDashboardSummary: React.FC<{
                 <div className="bg-rose-50 dark:bg-rose-900/20 p-6 rounded-lg shadow transition-all duration-300 ease-in-out hover:shadow-xl hover:-translate-y-2 hover:scale-105">
                     <h3 className="font-semibold text-rose-800 dark:text-rose-300">Symptom Checker</h3>
                     <p className="text-gray-600 dark:text-gray-400 mt-2">Get AI-powered insights on your symptoms.</p>
-                     <p className="font-bold text-lg mt-1 dark:text-white">Powered by Gemini</p>
+                     <p className="font-bold text-lg mt-1 dark:text-white">Powered by AI</p>
                     <button onClick={() => setActiveTab('Symptom Checker')} className="mt-4 text-rose-600 dark:text-rose-400 font-semibold hover:underline">Check Symptoms</button>
                 </div>
             </div>
@@ -210,7 +225,7 @@ const PatientDashboardSummary: React.FC<{
     );
 };
 
-const PatientPortal: React.FC<PatientPortalProps> = ({ user, appointments, setAppointments, prescriptions, labTests, onNavigate }) => {
+const PatientPortal: React.FC<PatientPortalProps> = ({ user, appointments, setAppointments, prescriptions, labTests, invoices, setInvoices, onNavigate }) => {
   const [activeTab, setActiveTab] = useState<PatientTab>('Dashboard');
   const [queueEntry, setQueueEntry] = useState<QueueEntry | undefined>(() => getQueueForPatient(user.id));
   const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
@@ -262,11 +277,11 @@ const PatientPortal: React.FC<PatientPortalProps> = ({ user, appointments, setAp
       case 'Prescriptions':
         return <Prescriptions user={user} prescriptions={patientPrescriptions} doctors={MOCK_DOCTORS} />;
       case 'Billing':
-        return <BillingHistory patientId={user.id} user={user} />;
+        return <BillingHistory patientId={user.id} user={user} invoices={invoices} setInvoices={setInvoices} />;
       case 'Wellness':
         return <WellnessTracker patientId={user.id} />;
       case 'Symptom Checker':
-        return <SymptomChecker />;
+        return <SymptomChecker user={user} />;
       case 'Dashboard':
       default:
         return (
@@ -275,6 +290,8 @@ const PatientPortal: React.FC<PatientPortalProps> = ({ user, appointments, setAp
             setActiveTab={setActiveTab}
             appointments={appointments}
             prescriptions={patientPrescriptions}
+            invoices={invoices}
+            labTests={labTests}
             queueEntry={queueEntry}
             onOpenAlertModal={() => setIsAlertModalOpen(true)}
             onAcknowledgeAlert={handleAcknowledgeAlert}

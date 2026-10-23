@@ -84,11 +84,15 @@ const Navbar: React.FC<NavbarProps> = ({ user, onNavigate, onLoginClick, onLogou
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center">
-            <button onClick={() => onNavigate('Home')} className="flex-shrink-0 flex items-center gap-2">
-               <svg className="h-8 w-8 text-primary" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                <path d="M18 9H15V6C15 5.44772 14.5523 5 14 5H10C9.44772 5 9 5.44772 9 6V9H6C5.44772 9 5 9.44772 5 10V14C5 14.5523 5.44772 15 6 15H9V18C9 18.5523 9.44772 19 10 19H14C14.5523 19 15 18.5523 15 18V15H18C18.5523 15 19 14.5523 19 14V10C19 9.44772 18.5523 9 18 9Z"/>
-               </svg>
-              <span className="text-xl font-bold text-primary">MediConnect</span>
+            <button onClick={() => onNavigate('Home')} className="flex-shrink-0 flex items-center gap-2.5 group">
+              <img
+                src="/logo-icon.png"
+                alt="MediConnect Logo"
+                className="h-9 w-auto object-contain transition-transform duration-300 group-hover:scale-105"
+              />
+              <span className="text-xl font-bold tracking-tight text-primary flex items-center">
+                Medi<span className="text-secondary">Connect</span>
+              </span>
             </button>
             <div className="hidden md:block">
               <div className="ml-10 flex items-baseline space-x-4">

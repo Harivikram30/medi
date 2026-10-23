@@ -5,7 +5,10 @@ import { MOCK_PATIENTS } from '../../constants';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import EmptyState from '../../components/Common/EmptyState';
+import { formatDisplayDate } from '../../services/dataSanitizer';
 import { callPatientFromDoctor } from '../../services/queueService';
+import { savePrescription as dbSavePrescription, saveAppointment as dbSaveAppointment } from '../../services/database';
 
 // Helper to format date as YYYY-MM-DD
 const formatDate = (d: Date): string => {
@@ -348,18 +351,26 @@ const PatientsView: React.FC<{
                     </tr>
                 </thead>
                 <tbody className="text-gray-700 dark:text-dark-text">
-                    {patients.map(patient => (
-                    <tr key={patient.id} className="border-b border-gray-200 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-bg">
-                        <td className="py-2 px-3">{patient.name}</td>
-                        <td className="py-2 px-3">{patient.age}</td>
-                        <td className="py-2 px-3">{patient.currentCondition}</td>
-                        <td className="py-2 px-3">
-                            <button onClick={() => onViewChart(patient)} className="text-sm bg-primary/10 text-primary dark:bg-primary/30 dark:text-white font-semibold py-1 px-3 rounded-full hover:bg-primary/20 transition">
-                                View Chart
-                            </button>
+                    {patients.length > 0 ? (
+                      patients.map(patient => (
+                        <tr key={patient.id} className="border-b border-gray-200 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-bg">
+                            <td className="py-2 px-3 font-semibold">{patient.name}</td>
+                            <td className="py-2 px-3">{patient.age > 0 ? `${patient.age} yrs` : 'N/A'}</td>
+                            <td className="py-2 px-3">{patient.currentCondition || 'General Consultation'}</td>
+                            <td className="py-2 px-3">
+                                <button onClick={() => onViewChart(patient)} className="text-sm bg-primary/10 text-primary dark:bg-primary/30 dark:text-white font-semibold py-1 px-3 rounded-full hover:bg-primary/20 transition">
+                                    View Chart
+                                </button>
+                            </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={4} className="py-8 text-center text-gray-500 dark:text-gray-400">
+                          No assigned patients found on record.
                         </td>
-                    </tr>
-                    ))}
+                      </tr>
+                    )}
                 </tbody>
                 </table>
             </div>
@@ -443,7 +454,23 @@ const DoctorPortal: React.FC<DoctorPortalProps> = ({ user, appointments, setAppo
 
     const doctorsAppointments = useMemo(() => appointments.filter(app => app.doctorId === user.id), [user.id, appointments]);
     const patientIds = useMemo(() => [...new Set(doctorsAppointments.map(app => app.patientId))], [doctorsAppointments]);
-    const doctorPatients = useMemo(() => MOCK_PATIENTS.filter(p => patientIds.includes(p.id)), [patientIds]);
+    const doctorPatients = useMemo(() => {
+        const knownPatientsMap = new Map<string, Patient>();
+        MOCK_PATIENTS.forEach(p => knownPatientsMap.set(p.id, p));
+
+        doctorsAppointments.forEach(app => {
+            if (!knownPatientsMap.has(app.patientId)) {
+                knownPatientsMap.set(app.patientId, {
+                    id: app.patientId,
+                    name: app.patientName,
+                    age: 0,
+                    currentCondition: app.type || 'General Consultation'
+                });
+            }
+        });
+
+        return Array.from(knownPatientsMap.values()).filter(p => patientIds.includes(p.id));
+    }, [doctorsAppointments, patientIds]);
 
     const todaysAppointments = useMemo(() => doctorsAppointments.filter(
         app => app.date === formatDate(new Date()) && app.status === 'Upcoming'
@@ -459,12 +486,18 @@ const DoctorPortal: React.FC<DoctorPortalProps> = ({ user, appointments, setAppo
             }
             return [...prev, prescription];
         });
+        dbSavePrescription(prescription);
     };
     
     const handleUpdateAppointmentStatus = (id: string, status: 'Completed' | 'Cancelled') => {
         const message = `Are you sure you want to mark this appointment as ${status.toLowerCase()}?`;
         if (window.confirm(message)) {
-            setAppointments(prev => prev.map(app => app.id === id ? { ...app, status } : app));
+            const app = appointments.find(a => a.id === id);
+            if (app) {
+                const updated = { ...app, status };
+                setAppointments(prev => prev.map(a => a.id === id ? updated : a));
+                dbSaveAppointment(updated);
+            }
         }
     };
 

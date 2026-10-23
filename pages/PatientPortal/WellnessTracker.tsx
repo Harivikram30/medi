@@ -3,6 +3,9 @@ import React, { useState, useMemo } from 'react';
 import { MOCK_WELLNESS_DATA } from '../../constants';
 import type { WellnessEntry } from '../../types';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import EmptyState from '../../components/Common/EmptyState';
+import { formatDisplayDate } from '../../services/dataSanitizer';
+import { saveWellnessEntry as dbSaveWellnessEntry } from '../../services/database';
 
 interface WellnessTrackerProps {
   patientId: string;
@@ -43,6 +46,7 @@ const WellnessTracker: React.FC<WellnessTrackerProps> = ({ patientId }) => {
 
     if (Object.keys(newEntry).length > 3) { // id, patientId, date + at least one metric
         setEntries(prev => [newEntry, ...prev].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+        dbSaveWellnessEntry(newEntry);
         // Reset form
         setSystolic('');
         setDiastolic('');
@@ -122,31 +126,47 @@ const WellnessTracker: React.FC<WellnessTrackerProps> = ({ patientId }) => {
               </select>
             </div>
           
-            <div className="h-80 bg-light dark:bg-dark-bg p-4 rounded-lg border dark:border-dark-border">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
-                  <XAxis dataKey="date" tick={{ fill: '#A0AEC0' }} />
-                  <YAxis tick={{ fill: '#A0AEC0' }} />
-                  <Tooltip contentStyle={{ backgroundColor: '#2D3748', border: 'none' }} />
-                  <Legend wrapperStyle={{ color: '#E2E8F0' }} />
-                  {selectedMetric === 'bloodPressure' && <Line type="monotone" dataKey="Systolic" stroke="#8884d8" />}
-                  {selectedMetric === 'bloodPressure' && <Line type="monotone" dataKey="Diastolic" stroke="#82ca9d" />}
-                  {selectedMetric === 'bloodSugar' && <Line type="monotone" dataKey="Blood Sugar" stroke="#ffc658" />}
-                  {selectedMetric === 'weight' && <Line type="monotone" dataKey="Weight" stroke="#ff7300" />}
-                </LineChart>
-              </ResponsiveContainer>
+            <div className="min-h-80 bg-light dark:bg-dark-bg p-4 rounded-lg border dark:border-dark-border flex items-center justify-center">
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={320}>
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
+                    <XAxis dataKey="date" tick={{ fill: '#A0AEC0' }} />
+                    <YAxis tick={{ fill: '#A0AEC0' }} />
+                    <Tooltip contentStyle={{ backgroundColor: '#2D3748', border: 'none' }} />
+                    <Legend wrapperStyle={{ color: '#E2E8F0' }} />
+                    {selectedMetric === 'bloodPressure' && <Line type="monotone" dataKey="Systolic" stroke="#8884d8" />}
+                    {selectedMetric === 'bloodPressure' && <Line type="monotone" dataKey="Diastolic" stroke="#82ca9d" />}
+                    {selectedMetric === 'bloodSugar' && <Line type="monotone" dataKey="Blood Sugar" stroke="#ffc658" />}
+                    {selectedMetric === 'weight' && <Line type="monotone" dataKey="Weight" stroke="#ff7300" />}
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <EmptyState
+                  icon="📈"
+                  title="No metrics logged yet"
+                  description="Log your blood pressure, sugar, or weight using the form to see health trends over time."
+                />
+              )}
             </div>
             
             <div className="mt-6">
                 <h3 className="text-lg font-bold mb-4 dark:text-white">Log History</h3>
                 <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
-                    {entries.map(entry => (
+                    {entries.length > 0 ? (
+                      entries.map(entry => (
                         <div key={entry.id} className="bg-light dark:bg-dark-bg p-3 rounded-md border dark:border-dark-border">
-                            <p className="font-semibold text-gray-800 dark:text-dark-text">{new Date(entry.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                            <p className="font-semibold text-gray-800 dark:text-dark-text">{formatDisplayDate(entry.date, { year: 'numeric', month: 'long', day: 'numeric' })}</p>
                             <p className="text-sm text-gray-600 dark:text-gray-400">{renderMetric(entry)}</p>
                         </div>
-                    ))}
+                      ))
+                    ) : (
+                      <EmptyState
+                        icon="📝"
+                        title="No log entries"
+                        description="Your historical vitals logs will appear here."
+                      />
+                    )}
                 </div>
             </div>
         </div>

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import type { Role, User, Page } from '../types';
 import { MOCK_USERS } from '../constants';
+import { supabase } from '../services/supabaseClient';
 
 interface LoginModalProps {
   onClose: () => void;
@@ -48,9 +49,19 @@ const LoginModal: React.FC<LoginModalProps> = ({
     }
   };
   
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (role) {
+      if (supabase) {
+        supabase.auth.signInWithPassword({
+          email,
+          password
+        }).catch(err => {
+          // Non-blocking error for pre-configured demo users
+          console.log('Supabase Auth note:', err?.message);
+        });
+      }
+
       const result = onLogin(email, password, role);
       if (result === 'unverified') {
         const unverifiedUser = allUsers.find(u => u.email.toLowerCase() === email.toLowerCase() && u.role === role);
@@ -62,7 +73,7 @@ const LoginModal: React.FC<LoginModalProps> = ({
     }
   };
   
-  const handleSignupSubmit = (e: React.FormEvent) => {
+  const handleSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSignupError('');
 
@@ -80,6 +91,38 @@ const LoginModal: React.FC<LoginModalProps> = ({
         avatarUrl: `https://ui-avatars.com/api/?name=${signupName.replace(' ', '+')}&background=0057A8&color=fff`,
         isVerified: true, // Automatically verify new users for demo purposes
     };
+
+    if (supabase) {
+      try {
+        supabase.auth.signUp({
+          email: signupEmail,
+          password: signupPassword,
+          options: {
+            data: { name: signupName, role: 'PATIENT' }
+          }
+        }).catch(err => console.warn('Supabase Auth signup notice:', err));
+
+        await supabase.from('profiles').upsert({
+          id: newUser.id,
+          name: newUser.name,
+          email: newUser.email,
+          role: newUser.role,
+          password: newUser.password,
+          avatar_url: newUser.avatarUrl,
+          is_verified: true
+        });
+
+        await supabase.from('patients').upsert({
+          id: newUser.id,
+          user_id: newUser.id,
+          name: newUser.name,
+          age: 30,
+          current_condition: 'General Healthcare'
+        });
+      } catch (err) {
+        console.warn('Supabase signup profile sync notice:', err);
+      }
+    }
 
     setUsers(prev => [...prev, newUser]);
     setView('signupSuccess');
@@ -259,13 +302,19 @@ const LoginModal: React.FC<LoginModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 animate-fadeIn">
-      <div className="bg-white dark:bg-dark-card rounded-lg shadow-xl p-8 max-w-sm w-full mx-4">
-        <div className="flex justify-end items-center mb-2 absolute top-4 right-4">
+      <div className="bg-white dark:bg-dark-card rounded-2xl shadow-2xl p-8 max-w-sm w-full mx-4 relative border border-gray-100 dark:border-gray-800">
+        <div className="flex justify-end items-center absolute top-4 right-4">
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-white">
             <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
+        </div>
+        <div className="flex flex-col items-center mb-5 text-center">
+          <img src="/logo-icon.png" alt="MediConnect" className="h-12 w-auto object-contain mb-2" />
+          <span className="text-xs font-semibold tracking-wider uppercase text-gray-500 dark:text-gray-400">
+            Medi<span className="text-secondary font-bold">Connect</span> Portal
+          </span>
         </div>
         {renderContent()}
       </div>

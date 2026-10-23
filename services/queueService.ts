@@ -1,27 +1,131 @@
 import type { QueueEntry, SilentAlert, QueueStatus } from '../types';
 import { MOCK_QUEUE_ENTRIES, MOCK_SILENT_ALERTS } from '../constants';
+import { supabase } from './supabaseClient';
+import { saveQueueEntry as dbSaveQueueEntry, saveSilentAlert as dbSaveSilentAlert } from './database';
 
 const QUEUE_STORAGE_KEY = 'hms_queue_entries';
 const ALERTS_STORAGE_KEY = 'hms_silent_alerts';
 const VIBRATION_STORAGE_KEY = 'hms_vibration_enabled';
 
-// Load Queue Entries from localStorage or mock
+// In-memory active cache
+let memoryQueue: QueueEntry[] | null = null;
+let memoryAlerts: SilentAlert[] | null = null;
+let isSubscribed = false;
+
+// Initialize Supabase Realtime Listener for Queue and Silent Alerts
+const initRealtimeQueue = () => {
+  if (isSubscribed || !supabase) return;
+  isSubscribed = true;
+
+  supabase
+    .channel('queue_realtime')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'queue_entries' }, (payload: any) => {
+      if (payload.new) {
+        const updatedEntry: QueueEntry = {
+          id: payload.new.id,
+          tokenNumber: payload.new.token_number,
+          patientId: payload.new.patient_id,
+          patientName: payload.new.patient_name,
+          doctorId: payload.new.doctor_id,
+          doctorName: payload.new.doctor_name,
+          department: payload.new.department,
+          roomNumber: payload.new.room_number,
+          queuePosition: payload.new.queue_position,
+          estimatedWaitMinutes: payload.new.estimated_wait_minutes,
+          status: payload.new.status,
+          checkInTime: payload.new.check_in_time,
+          calledAt: payload.new.called_at,
+          acknowledgedAt: payload.new.acknowledged_at
+        };
+
+        const current = getQueueEntries();
+        const index = current.findIndex(q => q.id === updatedEntry.id);
+        const updatedList = index > -1
+          ? current.map(q => q.id === updatedEntry.id ? updatedEntry : q)
+          : [updatedEntry, ...current];
+
+        saveQueueEntriesLocally(updatedList);
+      }
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'silent_alerts' }, (payload: any) => {
+      if (payload.new) {
+        const updatedAlert: SilentAlert = {
+          id: payload.new.id,
+          tokenNumber: payload.new.token_number,
+          patientId: payload.new.patient_id,
+          patientName: payload.new.patient_name,
+          doctorId: payload.new.doctor_id,
+          doctorName: payload.new.doctor_name,
+          department: payload.new.department,
+          roomNumber: payload.new.room_number,
+          timestamp: payload.new.timestamp,
+          acknowledged: Boolean(payload.new.acknowledged),
+          acknowledgedAt: payload.new.acknowledged_at,
+          status: payload.new.status
+        };
+
+        const currentAlerts = getSilentAlerts();
+        const index = currentAlerts.findIndex(a => a.id === updatedAlert.id);
+        const updatedList = index > -1
+          ? currentAlerts.map(a => a.id === updatedAlert.id ? updatedAlert : a)
+          : [updatedAlert, ...currentAlerts];
+
+        saveSilentAlertsLocally(updatedList);
+      }
+    })
+    .subscribe();
+};
+
+const saveQueueEntriesLocally = (entries: QueueEntry[]) => {
+  memoryQueue = entries;
+  try {
+    localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(entries));
+  } catch (e) {
+    console.error('Error saving queue entries locally:', e);
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('mediconnect_queue_change', { detail: { entries } }));
+  }
+};
+
+const saveSilentAlertsLocally = (alerts: SilentAlert[]) => {
+  memoryAlerts = alerts;
+  try {
+    localStorage.setItem(ALERTS_STORAGE_KEY, JSON.stringify(alerts));
+  } catch (e) {
+    console.error('Error saving silent alerts locally:', e);
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('mediconnect_alerts_change', { detail: { alerts } }));
+  }
+};
+
+// Load Queue Entries from memory, localStorage, or mock
 export const getQueueEntries = (): QueueEntry[] => {
+  initRealtimeQueue();
+  if (memoryQueue) return memoryQueue;
+
   try {
     const raw = localStorage.getItem(QUEUE_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      memoryQueue = JSON.parse(raw);
+      return memoryQueue!;
+    }
   } catch (e) {
     console.error('Error loading queue entries from localStorage:', e);
   }
-  return MOCK_QUEUE_ENTRIES;
+  memoryQueue = MOCK_QUEUE_ENTRIES;
+  return memoryQueue;
 };
 
 export const saveQueueEntries = (entries: QueueEntry[]) => {
-  try {
-    localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(entries));
-    window.dispatchEvent(new CustomEvent('mediconnect_queue_change', { detail: { entries } }));
-  } catch (e) {
-    console.error('Error saving queue entries:', e);
+  saveQueueEntriesLocally(entries);
+
+  // Sync latest entries to Supabase
+  if (supabase) {
+    entries.slice(0, 10).forEach(entry => {
+      dbSaveQueueEntry(entry).catch(err => console.warn('Supabase queue sync warning:', err));
+    });
   }
 };
 
@@ -32,25 +136,32 @@ export const getQueueForPatient = (patientId: string): QueueEntry | undefined =>
 
 // Load Silent Alerts History
 export const getSilentAlerts = (patientId?: string): SilentAlert[] => {
-  try {
-    const raw = localStorage.getItem(ALERTS_STORAGE_KEY);
-    const alerts: SilentAlert[] = raw ? JSON.parse(raw) : MOCK_SILENT_ALERTS;
-    if (patientId) {
-      return alerts.filter(a => a.patientId === patientId);
+  initRealtimeQueue();
+  let alerts = memoryAlerts;
+  if (!alerts) {
+    try {
+      const raw = localStorage.getItem(ALERTS_STORAGE_KEY);
+      alerts = raw ? JSON.parse(raw) : MOCK_SILENT_ALERTS;
+      memoryAlerts = alerts;
+    } catch (e) {
+      console.error('Error loading silent alerts:', e);
+      alerts = MOCK_SILENT_ALERTS;
     }
-    return alerts;
-  } catch (e) {
-    console.error('Error loading silent alerts:', e);
-    return patientId ? MOCK_SILENT_ALERTS.filter(a => a.patientId === patientId) : MOCK_SILENT_ALERTS;
   }
+
+  if (patientId) {
+    return alerts!.filter(a => a.patientId === patientId);
+  }
+  return alerts!;
 };
 
 export const saveSilentAlerts = (alerts: SilentAlert[]) => {
-  try {
-    localStorage.setItem(ALERTS_STORAGE_KEY, JSON.stringify(alerts));
-    window.dispatchEvent(new CustomEvent('mediconnect_alerts_change', { detail: { alerts } }));
-  } catch (e) {
-    console.error('Error saving silent alerts:', e);
+  saveSilentAlertsLocally(alerts);
+
+  if (supabase) {
+    alerts.slice(0, 5).forEach(alert => {
+      dbSaveSilentAlert(alert).catch(err => console.warn('Supabase silent alert sync warning:', err));
+    });
   }
 };
 
@@ -58,7 +169,7 @@ export const saveSilentAlerts = (alerts: SilentAlert[]) => {
 export const getVibrationPreference = (): boolean => {
   try {
     const raw = localStorage.getItem(VIBRATION_STORAGE_KEY);
-    return raw !== null ? JSON.parse(raw) : true; // Enabled by default
+    return raw !== null ? JSON.parse(raw) : true;
   } catch (e) {
     return true;
   }
@@ -173,7 +284,10 @@ export const clearAlertHistory = (patientId: string): void => {
 };
 
 // Doctor Calling Patient (Triggers MediSilentAlert)
-export const callPatientFromDoctor = (appointment: { patientId: string; patientName: string; doctorSpecialization?: string }, doctor: { id: string; name: string; department?: string }): QueueEntry => {
+export const callPatientFromDoctor = (
+  appointment: { patientId: string; patientName: string; doctorSpecialization?: string },
+  doctor: { id: string; name: string; department?: string }
+): QueueEntry => {
   const entries = getQueueEntries();
   let existing = entries.find(e => e.patientId === appointment.patientId && e.status !== 'Completed' && e.status !== 'Cancelled');
   const roomNumber = `Room ${doctor.id === 'd001' ? '204' : doctor.id === 'd002' ? '310' : doctor.id === 'd003' ? '108' : '105'} (${doctor.department || appointment.doctorSpecialization || 'OPD'} - 2nd Floor)`;

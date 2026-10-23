@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { User, LabTest } from '../../types';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { saveLabTest as dbSaveLabTest, saveMedicalRecord as dbSaveMedicalRecord } from '../../services/database';
 
 interface LabPortalProps {
     user: User;
@@ -21,7 +22,17 @@ const LabPortal: React.FC<LabPortalProps> = ({ user, labTests, setLabTests }) =>
     };
 
     const handleUpdateStatus = (id: string, newStatus: LabTest['status']) => {
-        setLabTests(prev => prev.map(t => (t.id === id ? { ...t, status: newStatus } : t)));
+        let updatedTest: LabTest | undefined;
+        setLabTests(prev => prev.map(t => {
+            if (t.id === id) {
+                updatedTest = { ...t, status: newStatus };
+                return updatedTest;
+            }
+            return t;
+        }));
+        if (updatedTest) {
+            dbSaveLabTest(updatedTest);
+        }
         showNotification(`Test #${id} status updated to "${newStatus}".`);
     };
 
@@ -34,10 +45,23 @@ const LabPortal: React.FC<LabPortalProps> = ({ user, labTests, setLabTests }) =>
     const handleSaveResults = (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedTest) return;
-        setLabTests(prev => prev.map(t => (
-            t.id === selectedTest.id ? { ...t, status: 'Completed', results: resultNotes } : t
-        )));
-        showNotification(`Results saved for test #${selectedTest.id}.`);
+        const updatedTest: LabTest = { ...selectedTest, status: 'Completed', results: resultNotes };
+        setLabTests(prev => prev.map(t => (t.id === selectedTest.id ? updatedTest : t)));
+        dbSaveLabTest(updatedTest);
+
+        // Also create a verified clinical medical record in Supabase
+        dbSaveMedicalRecord({
+            id: `rec_lab_${Date.now()}`,
+            patientId: selectedTest.patientName.toLowerCase().replace(/\s+/g, '_'),
+            date: new Date().toISOString().split('T')[0],
+            type: 'Lab Result',
+            title: selectedTest.testType,
+            summary: resultNotes || 'Diagnostic testing verified and completed.',
+            doctorName: selectedTest.requestedBy,
+            fileUrl: '#'
+        });
+
+        showNotification(`Results saved and published for test #${selectedTest.id}.`);
         setModalOpen(false);
         setSelectedTest(null);
         setResultNotes('');
@@ -55,6 +79,12 @@ const LabPortal: React.FC<LabPortalProps> = ({ user, labTests, setLabTests }) =>
         try {
             const doc = new jsPDF();
             const pageWidth = doc.internal.pageSize.getWidth();
+            const patientName = test?.patientName || 'Patient';
+            const testId = test?.id || 'Unknown';
+            const testType = test?.testType || 'Diagnostic Test';
+            const safeDate = test?.date ? (isNaN(new Date(test.date).getTime()) ? test.date : new Date(test.date).toLocaleDateString()) : 'N/A';
+            const requestedBy = test?.requestedBy || 'Attending Physician';
+            const results = test?.results || 'No results entered.';
 
             // Header
             doc.setDrawColor(0, 87, 168);
@@ -77,11 +107,11 @@ const LabPortal: React.FC<LabPortalProps> = ({ user, labTests, setLabTests }) =>
             autoTable(doc, {
                 body: [
                     [{content: 'Patient & Test Information', colSpan: 2, styles: { halign: 'center', fontStyle: 'bold' }}],
-                    ['Patient Name:', test.patientName],
-                    ['Test ID:', test.id],
-                    ['Test Type:', test.testType],
-                    ['Date Reported:', new Date(test.date).toLocaleDateString()],
-                    ['Requested By:', test.requestedBy],
+                    ['Patient Name:', patientName],
+                    ['Test ID:', testId],
+                    ['Test Type:', testType],
+                    ['Date Reported:', safeDate],
+                    ['Requested By:', requestedBy],
                 ],
                 startY: 40,
                 theme: 'grid',
@@ -92,7 +122,7 @@ const LabPortal: React.FC<LabPortalProps> = ({ user, labTests, setLabTests }) =>
             autoTable(doc, {
                 head: [['Results']],
                 body: [
-                    [test.results || 'No results entered.']
+                    [results]
                 ],
                 headStyles: { fillColor: [0, 87, 168] }
             });
@@ -101,10 +131,11 @@ const LabPortal: React.FC<LabPortalProps> = ({ user, labTests, setLabTests }) =>
             const finalY = (doc as any).lastAutoTable?.finalY ?? 60;
             doc.setFontSize(10);
             doc.setTextColor(100);
-            doc.text(`Verified by: ${user.name} (${user.department})`, 14, finalY + 15);
+            doc.text(`Verified by: ${user?.name || 'Lab Technician'} (${user?.department || 'Laboratory'})`, 14, finalY + 15);
             doc.line(14, finalY + 17, 80, finalY + 17);
             
-            doc.save(`LabReport_${test.patientName.replace(/\s/g, '_')}_${test.id}.pdf`);
+            const sanitizedFileName = patientName.replace(/[^a-zA-Z0-9_-]/g, '_');
+            doc.save(`LabReport_${sanitizedFileName}_${testId}.pdf`);
         } catch (err) {
             console.error("Lab Report PDF generation error:", err);
             alert("Failed to download lab report PDF. Please try again.");
@@ -119,16 +150,17 @@ const LabPortal: React.FC<LabPortalProps> = ({ user, labTests, setLabTests }) =>
         )
     );
 
-    const testsInProgress = labTests.filter(t => t.status === 'In Progress');
-    const testsPending = labTests.filter(t => t.status === 'Pending');
-    const testsCompleted = labTests.filter(t => t.status === 'Completed');
+    const safeLabTests = Array.isArray(labTests) ? labTests : [];
+    const testsInProgress = safeLabTests.filter(t => t?.status === 'In Progress');
+    const testsPending = safeLabTests.filter(t => t?.status === 'Pending');
+    const testsCompleted = safeLabTests.filter(t => t?.status === 'Completed');
 
     return (
         <>
             <NotificationBanner />
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 animate-fadeIn">
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Lab Dashboard</h1>
-                <p className="mt-2 text-lg text-gray-600 dark:text-gray-300">Welcome, {user.name} ({user.department}).</p>
+                <p className="mt-2 text-lg text-gray-600 dark:text-gray-300">Welcome, {user?.name || 'Lab Staff'} ({user?.department || 'Laboratory'}).</p>
 
                 <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
                     {/* Active Work Queue */}
@@ -140,7 +172,7 @@ const LabPortal: React.FC<LabPortalProps> = ({ user, labTests, setLabTests }) =>
                                 {testsInProgress.length > 0 ? testsInProgress.map(test => (
                                     <div key={test.id} className={`p-4 bg-light dark:bg-dark-bg rounded-lg border-l-4 ${getStatusColor(test.status)}`}>
                                         <p className="font-bold dark:text-dark-text">{test.testType}</p>
-                                        <p className="text-sm text-gray-600 dark:text-gray-400">Patient: {test.patientName} | Req by: {test.requestedBy}</p>
+                                        <p className="text-sm text-gray-600 dark:text-gray-400">Patient: {test.patientName || 'Unknown'} | Req by: {test.requestedBy || 'N/A'}</p>
                                         <button onClick={() => handleOpenResultsModal(test)} className="mt-2 text-sm bg-secondary text-white font-semibold py-1 px-3 rounded-md hover:bg-green-600">Enter Results</button>
                                     </div>
                                 )) : <p className="text-gray-500 dark:text-gray-400">No tests currently in progress.</p>}
@@ -153,7 +185,7 @@ const LabPortal: React.FC<LabPortalProps> = ({ user, labTests, setLabTests }) =>
                                 {testsPending.length > 0 ? testsPending.map(test => (
                                     <div key={test.id} className={`p-4 bg-light dark:bg-dark-bg rounded-lg border-l-4 ${getStatusColor(test.status)}`}>
                                         <p className="font-bold dark:text-dark-text">{test.testType}</p>
-                                        <p className="text-sm text-gray-600 dark:text-gray-400">Patient: {test.patientName} | Req by: {test.requestedBy}</p>
+                                        <p className="text-sm text-gray-600 dark:text-gray-400">Patient: {test.patientName || 'Unknown'} | Req by: {test.requestedBy || 'N/A'}</p>
                                         <button onClick={() => handleUpdateStatus(test.id, 'In Progress')} className="mt-2 text-sm bg-blue-500 text-white font-semibold py-1 px-3 rounded-md hover:bg-blue-600">Start Test</button>
                                     </div>
                                 )) : <p className="text-gray-500 dark:text-gray-400">No pending test requests.</p>}
@@ -164,13 +196,15 @@ const LabPortal: React.FC<LabPortalProps> = ({ user, labTests, setLabTests }) =>
                     <div className="lg:col-span-1 bg-white dark:bg-dark-card p-6 rounded-lg shadow-md">
                         <h2 className="text-xl font-semibold text-gray-800 dark:text-dark-text mb-4">Completed Tests</h2>
                         <div className="space-y-3 max-h-[36rem] overflow-y-auto pr-2">
-                            {testsCompleted.map(test => (
+                            {testsCompleted.length > 0 ? testsCompleted.map(test => (
                                 <div key={test.id} className={`p-3 bg-light dark:bg-dark-bg rounded-md border-l-4 ${getStatusColor(test.status)}`}>
-                                    <p className="font-semibold dark:text-dark-text text-sm">{test.testType} - {test.patientName}</p>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">Completed on {test.date}</p>
+                                    <p className="font-semibold dark:text-dark-text text-sm">{test.testType} - {test.patientName || 'Patient'}</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">Completed on {test.date || 'N/A'}</p>
                                     <button onClick={() => handleDownloadPdf(test)} className="text-xs text-primary dark:text-blue-400 hover:underline mt-1">Download PDF</button>
                                 </div>
-                            ))}
+                            )) : (
+                                <p className="text-gray-500 dark:text-gray-400 text-sm py-4">No completed lab tests yet.</p>
+                            )}
                         </div>
                     </div>
                 </div>

@@ -18,19 +18,36 @@ export const WayFinderPage: React.FC<WayFinderPageProps> = ({ initialDestination
   const [inspectedLocation, setInspectedLocation] = useState<HospitalLocation | null>(null);
 
   // Default starting point: Main Hospital Entrance & Reception (NOT an elevator)
+  const FALLBACK_LOCATION: HospitalLocation = {
+    id: 'loc_g01',
+    name: 'Main Hospital Entrance & Reception',
+    roomNumber: 'Lobby',
+    floor: 0,
+    floorName: 'Ground Floor',
+    wing: 'Central Atrium',
+    category: 'Amenities',
+    description: 'Main hospital entrance, welcome desk and visitor information.',
+    isWheelchairAccessible: true,
+    coordinates: { x: 50, y: 88 },
+    openHours: '24/7'
+  };
+
   const defaultStart = useMemo(() => {
-    return locations.find(l => l.id === 'loc_g01') || 
-           locations.find(l => l.name.toLowerCase().includes('entrance')) || 
-           locations[0];
+    const list = Array.isArray(locations) ? locations : [];
+    return list.find(l => l?.id === 'loc_g01') || 
+           list.find(l => (l?.name || '').toLowerCase().includes('entrance')) || 
+           list[0] ||
+           FALLBACK_LOCATION;
   }, [locations]);
 
   // Destination defaults to initialDestinationId or Cardiology Room 204
   const defaultDestination = useMemo(() => {
+    const list = Array.isArray(locations) ? locations : [];
     if (initialDestinationId) {
-      const match = locations.find(l => l.id === initialDestinationId || l.roomNumber.toLowerCase().includes(initialDestinationId.toLowerCase()));
+      const match = list.find(l => l?.id === initialDestinationId || (l?.roomNumber || '').toLowerCase().includes(initialDestinationId.toLowerCase()));
       if (match) return match;
     }
-    return locations.find(l => l.roomNumber === 'Room 204') || locations[1] || locations[0];
+    return list.find(l => l?.roomNumber === 'Room 204') || list[1] || list[0] || FALLBACK_LOCATION;
   }, [initialDestinationId, locations]);
 
   const [startLocation, setStartLocation] = useState<HospitalLocation>(defaultStart);

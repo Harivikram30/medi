@@ -6,6 +6,8 @@ import {
   isGeminiApiKeyConfigured 
 } from '../../services/geminiService';
 import { Remarkable } from 'remarkable';
+import { saveClinicalAiSuggestion } from '../../services/database';
+import type { User } from '../../types';
 
 const md = new Remarkable({
   html: false,
@@ -13,7 +15,11 @@ const md = new Remarkable({
   typographer: true,
 });
 
-const SymptomChecker: React.FC = () => {
+interface SymptomCheckerProps {
+  user?: User;
+}
+
+const SymptomChecker: React.FC<SymptomCheckerProps> = ({ user }) => {
   const [symptoms, setSymptoms] = useState('');
   const [analysis, setAnalysis] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -44,13 +50,13 @@ const SymptomChecker: React.FC = () => {
     e.preventDefault();
     const cleanKey = keyInput.trim();
     if (cleanKey && cleanKey.length < 15) {
-      setKeyFeedback({ text: 'Please enter a valid Gemini API key (starts with AIzaSy...).', type: 'error' });
+      setKeyFeedback({ text: 'Please enter a valid API key (starts with AIzaSy...).', type: 'error' });
       return;
     }
     setGeminiApiKey(cleanKey);
     setIsKeyConfigured(Boolean(cleanKey));
     setKeyFeedback({
-      text: cleanKey ? '✓ Gemini API Key saved securely in browser!' : 'API Key removed. Using Clinical Knowledge Engine.',
+      text: cleanKey ? '✓ API Key saved securely in browser!' : 'API Key removed. Using Clinical Knowledge Engine.',
       type: cleanKey ? 'success' : 'info'
     });
     setTimeout(() => {
@@ -71,6 +77,11 @@ const SymptomChecker: React.FC = () => {
     try {
       const result = await getSymptomAnalysis(symptoms);
       setAnalysis(result);
+      saveClinicalAiSuggestion({
+        patientId: user?.id || 'p001',
+        suggestionType: 'symptom_analysis',
+        content: result
+      }).catch(err => console.warn('Could not save AI suggestion to Supabase:', err));
     } catch (e: any) {
       console.error(e);
       setError('An unexpected error occurred during symptom analysis. Please try again.');
@@ -98,7 +109,7 @@ const SymptomChecker: React.FC = () => {
           {isKeyConfigured ? (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Gemini 2.5 Flash Live</span>
+              <span>AI Engine Live</span>
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
@@ -111,7 +122,7 @@ const SymptomChecker: React.FC = () => {
             type="button"
             onClick={handleOpenSettings}
             className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition flex items-center gap-1 shadow-sm"
-            title="Configure or update your Google Gemini API Key"
+            title="Configure or update your AI API Key"
           >
             <span>🔑</span>
             <span>{isKeyConfigured ? 'Change Key' : 'Configure API Key'}</span>
@@ -127,7 +138,7 @@ const SymptomChecker: React.FC = () => {
               <div className="flex items-center gap-2">
                 <span className="text-xl">🔑</span>
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                  Gemini AI API Key Setup
+                  AI API Key Setup
                 </h3>
               </div>
               <button
@@ -140,7 +151,7 @@ const SymptomChecker: React.FC = () => {
             </div>
 
             <p className="text-xs text-gray-600 dark:text-gray-300 mt-3 leading-relaxed">
-              Enter your Google Gemini API Key to enable real-time <strong>Gemini 2.5 Flash</strong> generative intelligence across the Symptom Checker, MediBot Health Assistant, and Pharmacy Alternative tools.
+              Enter your AI API Key to enable real-time generative intelligence across the Symptom Checker, MediBot Health Assistant, and Pharmacy Alternative tools.
             </p>
 
             {keyFeedback && (
@@ -158,7 +169,7 @@ const SymptomChecker: React.FC = () => {
             <form onSubmit={handleSaveKey} className="mt-4 space-y-4">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 mb-1">
-                  Google Gemini API Key
+                  AI API Key
                 </label>
                 <input
                   type="password"
@@ -182,7 +193,7 @@ const SymptomChecker: React.FC = () => {
                     rel="noopener noreferrer"
                     className="font-bold underline text-primary dark:text-blue-400 hover:text-blue-700 inline-flex items-center gap-0.5"
                   >
-                    Google AI Studio ↗
+                    AI Studio ↗
                   </a>
                 </div>
               </div>
@@ -323,8 +334,18 @@ const SymptomChecker: React.FC = () => {
               </h3>
             </div>
             <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2.5 py-1 rounded-md">
-              {isKeyConfigured ? '⚡ Powered by Gemini 2.5 Flash' : '🧠 Clinical Knowledge Engine'}
+              {isKeyConfigured ? '⚡ Powered by Advanced AI' : '🧠 Clinical Knowledge Engine'}
             </span>
+          </div>
+
+          <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2.5">
+            <span className="text-base">🛡️</span>
+            <div>
+              <span className="font-bold">AI Clinical Assistance (Pending Clinical Doctor Review):</span>
+              <p className="mt-0.5 text-[11px] text-amber-800 dark:text-amber-300">
+                This AI-generated clinical suggestion is stored separately from verified hospital medical records and requires certified clinical review. Always consult a physician for official medical evaluation.
+              </p>
+            </div>
           </div>
 
           <div 

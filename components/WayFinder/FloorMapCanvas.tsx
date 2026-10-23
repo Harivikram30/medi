@@ -76,7 +76,7 @@ export const FloorMapCanvas: React.FC<FloorMapCanvasProps> = ({
   onToggleSelectionMode,
   isWheelchairAccessible,
 }) => {
-  const floorLocations = locations.filter(loc => loc.floor === currentFloor);
+  const floorLocations = (locations || []).filter(loc => loc && loc.floor === currentFloor);
 
   const getCategoryIcon = (cat: HospitalLocation['category']) => {
     switch (cat) {
@@ -87,6 +87,14 @@ export const FloorMapCanvas: React.FC<FloorMapCanvasProps> = ({
       case 'Amenities': return '♿';
       default: return '📍';
     }
+  };
+
+  // Safe point extractor
+  const getPoint = (loc?: HospitalLocation | null, fallback: Point = { x: 50, y: 50 }): Point => {
+    if (loc && loc.coordinates && typeof loc.coordinates.x === 'number' && typeof loc.coordinates.y === 'number') {
+      return loc.coordinates;
+    }
+    return fallback;
   };
 
   // Determine path points on this floor
@@ -102,23 +110,26 @@ export const FloorMapCanvas: React.FC<FloorMapCanvasProps> = ({
   let pathEndPoint: Point | null = null;
 
   if (activeRoute && startLocation && selectedLocation) {
+    const startPt = getPoint(startLocation, { x: 50, y: 88 });
+    const destPt = getPoint(selectedLocation, { x: 50, y: 50 });
+
     if (isStartOnThisFloor && isDestOnThisFloor) {
       // Both start and destination are on this floor
       if (startLocation.id !== selectedLocation.id) {
-        pathStartPoint = startLocation.coordinates;
-        pathEndPoint = selectedLocation.coordinates;
-        floorPathPoints = generateCorridorPath(startLocation.coordinates, selectedLocation.coordinates);
+        pathStartPoint = startPt;
+        pathEndPoint = destPt;
+        floorPathPoints = generateCorridorPath(startPt, destPt);
       }
     } else if (isStartOnThisFloor && !isDestOnThisFloor) {
       // Journey starts on this floor, routes to Elevator A for vertical transit
-      pathStartPoint = startLocation.coordinates;
+      pathStartPoint = startPt;
       pathEndPoint = elevatorCoords;
-      floorPathPoints = generateCorridorPath(startLocation.coordinates, elevatorCoords);
+      floorPathPoints = generateCorridorPath(startPt, elevatorCoords);
     } else if (!isStartOnThisFloor && isDestOnThisFloor) {
       // Journey arrives on this floor from Elevator A, routes to destination
       pathStartPoint = elevatorCoords;
-      pathEndPoint = selectedLocation.coordinates;
-      floorPathPoints = generateCorridorPath(elevatorCoords, selectedLocation.coordinates);
+      pathEndPoint = destPt;
+      floorPathPoints = generateCorridorPath(elevatorCoords, destPt);
     }
   }
 

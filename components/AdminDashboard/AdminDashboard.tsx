@@ -512,7 +512,7 @@ const PharmacyManagement: React.FC<AdminDashboardProps> = ({ medicines, setMedic
                         </tr>
                     </thead>
                     <tbody className="text-gray-700 dark:text-dark-text">
-                        {medicines.map(med => (
+                        {(medicines || []).map(med => (
                             <tr key={med.id} className="border-b border-gray-200 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-bg">
                                 <td className="py-2 px-3">{med.name}</td>
                                 <td className="py-2 px-3">{med.category}</td>
@@ -528,6 +528,9 @@ const PharmacyManagement: React.FC<AdminDashboardProps> = ({ medicines, setMedic
                                 </td>
                             </tr>
                         ))}
+                        {(!medicines || medicines.length === 0) && (
+                            <tr><td colSpan={5} className="text-center py-4 text-gray-500 dark:text-gray-400">No medicines in inventory.</td></tr>
+                        )}
                     </tbody>
                  </table>
              </div>
@@ -675,9 +678,10 @@ const BillingManagement: React.FC<AdminDashboardProps> = ({ invoices, setInvoice
     const patients = useMemo(() => allUsers.filter(u => u.role === 'PATIENT'), [allUsers]);
 
     const filteredInvoices = useMemo(() => {
-        return invoices
+        const term = (filterPatient || '').toLowerCase();
+        return (invoices || [])
             .filter(inv => filterStatus === 'All' || inv.status === filterStatus)
-            .filter(inv => filterPatient === '' || inv.patientName.toLowerCase().includes(filterPatient.toLowerCase()));
+            .filter(inv => !filterPatient || (inv.patientName || '').toLowerCase().includes(term));
     }, [invoices, filterStatus, filterPatient]);
 
     const handleCreateNew = () => {
@@ -754,9 +758,9 @@ const BillingManagement: React.FC<AdminDashboardProps> = ({ invoices, setInvoice
                         {filteredInvoices.map(inv => (
                             <tr key={inv.id} className="border-b border-gray-200 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-bg">
                                 <td className="py-2 px-3 font-mono text-xs">{inv.invoiceNumber}</td>
-                                <td className="py-2 px-3">{inv.patientName}</td>
-                                <td className="py-2 px-3">{inv.dueDate}</td>
-                                <td className="py-2 px-3">${inv.totalAmount.toFixed(2)}</td>
+                                <td className="py-2 px-3">{inv.patientName || 'N/A'}</td>
+                                <td className="py-2 px-3">{inv.dueDate || 'N/A'}</td>
+                                <td className="py-2 px-3">${Number(inv.totalAmount || 0).toFixed(2)}</td>
                                 <td className="py-2 px-3">
                                     <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusClass(inv.status)}`}>
                                         {inv.status}
@@ -770,6 +774,9 @@ const BillingManagement: React.FC<AdminDashboardProps> = ({ invoices, setInvoice
                                 </td>
                             </tr>
                         ))}
+                        {filteredInvoices.length === 0 && (
+                            <tr><td colSpan={6} className="text-center py-4 text-gray-500 dark:text-gray-400">No invoices found.</td></tr>
+                        )}
                     </tbody>
                 </table>
             </div>
@@ -817,7 +824,7 @@ const ReportsTab: React.FC<AdminDashboardProps> = ({ allUsers, medicines, invoic
         generatePdf(
             "Billing Report",
             [['Invoice #', 'Patient', 'Amount', 'Status', 'Due Date']],
-            invoices.map(i => [i.invoiceNumber, i.patientName, `$${i.totalAmount.toFixed(2)}`, i.status, i.dueDate]),
+            (invoices || []).map(i => [i.invoiceNumber || 'N/A', i.patientName || 'N/A', `$${Number(i.totalAmount || 0).toFixed(2)}`, i.status || 'N/A', i.dueDate || 'N/A']),
             'Billing_Report.pdf'
         );
     };

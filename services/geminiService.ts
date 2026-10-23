@@ -104,12 +104,12 @@ export const getChatbotResponse = async (
     // Check for medicines
     if (q.includes('medicine') || q.includes('pharmacy') || q.includes('drug') || q.includes('stock')) {
       const availableMeds = data.medicines.slice(0, 5).map(m => `* **${m.name}** (${m.category}) - ${m.quantity} in stock`).join('\n');
-      return `Here are some of the current medicines available at our Outpatient Pharmacy (Room PH-01, Ground Floor):\n\n${availableMeds}\n\n*Note: Add your Gemini API Key in the settings to enable full natural language chat.*`;
+      return `Here are some of the current medicines available at our Outpatient Pharmacy (Room PH-01, Ground Floor):\n\n${availableMeds}\n\n*Note: Add your AI API Key in the settings to enable full natural language chat.*`;
     }
 
     // General fallback
     return `Hello! I'm MediBot. You can ask me about our doctors, clinic hours, pharmacy stock, or emergency services.\n\n` +
-           `💡 *Tip: Configure your Gemini API key in the Symptom Checker to enable live conversational AI.*`;
+           `💡 *Tip: Configure your AI API key in the Symptom Checker to enable live conversational AI.*`;
   }
   
   // Create a comprehensive knowledge base for the model
@@ -369,7 +369,7 @@ export const getSymptomAnalysis = async (symptoms: string): Promise<string> => {
       console.warn("Live Gemini API call failed, falling back to clinical knowledge engine:", error);
       // Fall through to clinical knowledge engine with note
       const fallbackAnalysis = generateClinicalSymptomAnalysis(symptoms);
-      return `> ℹ️ *Live Gemini API call encountered an error (${error?.message || 'Network/Quota'}). Clinical Knowledge Analysis provided below:*\n\n${fallbackAnalysis}`;
+      return `> ℹ️ *Live AI service encountered an error (${error?.message || 'Network/Quota'}). Clinical Knowledge Analysis provided below:*\n\n${fallbackAnalysis}`;
     }
   }
 
@@ -435,7 +435,7 @@ export const getAdminInsights = async (data: { appointments: any[], medicines: a
 ### Recommendations
 1. Place replenishment order for low-stock pharmaceutical supplies immediately.
 2. Direct stable outpatients to the new **MediConnect WayFinder** kiosk for reduced reception congestion.
-3. Configure your Google Gemini API key to unlock real-time predictive ML forecasting.`;
+3. Configure your AI API key to unlock real-time predictive ML forecasting.`;
   }
   
   const appointmentSummary = data.appointments.map(a => ({

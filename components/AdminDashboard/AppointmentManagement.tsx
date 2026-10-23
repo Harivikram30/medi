@@ -23,16 +23,23 @@ const AppointmentManagement: React.FC<AppointmentManagementProps> = ({ appointme
     };
 
     const filteredAppointments = useMemo(() => {
-        return appointments
+        const safeApps = Array.isArray(appointments) ? appointments : [];
+        const term = (searchTerm || '').toLowerCase();
+        return safeApps
             .filter(app => {
+                if (!app) return false;
                 if (statusFilter === 'All') return true;
                 return app.status === statusFilter;
             })
             .filter(app => 
-                app.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                app.doctorName.toLowerCase().includes(searchTerm.toLowerCase())
+                (app.patientName || '').toLowerCase().includes(term) ||
+                (app.doctorName || '').toLowerCase().includes(term)
             )
-            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            .sort((a, b) => {
+                const timeB = b?.date ? new Date(b.date).getTime() : 0;
+                const timeA = a?.date ? new Date(a.date).getTime() : 0;
+                return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
+            });
     }, [appointments, searchTerm, statusFilter]);
 
     const handleCancelAppointment = (appointmentId: string) => {
@@ -189,7 +196,7 @@ const AppointmentManagement: React.FC<AppointmentManagementProps> = ({ appointme
                                 </tr>
                             ))}
                             {filteredAppointments.length === 0 && (
-                                <tr><td colSpan={6} className="text-center py-4 text-gray-500 dark:text-gray-400">No appointments found.</td></tr>
+                                <tr><td colSpan={7} className="text-center py-4 text-gray-500 dark:text-gray-400">No appointments found.</td></tr>
                             )}
                         </tbody>
                     </table>

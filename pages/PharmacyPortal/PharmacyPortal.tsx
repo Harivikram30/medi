@@ -3,7 +3,9 @@ import type { User, Medicine, Prescription } from '../../types';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import EmptyState from '../../components/Common/EmptyState';
 import AlternativeSuggestionsModal from './AlternativeSuggestionsModal';
+import { savePrescription as dbSavePrescription, saveMedicine as dbSaveMedicine } from '../../services/database';
 
 const AddMedicineModal: React.FC<{ onSave: (medicine: Omit<Medicine, 'id'>) => void; onClose: () => void; }> = ({ onSave, onClose }) => {
     const [name, setName] = useState('');
@@ -84,13 +86,40 @@ const PharmacyPortal: React.FC<PharmacyPortalProps> = ({ user, medicines, setMed
     };
 
     const handleUpdatePrescriptionStatus = (id: string, newStatus: Prescription['status']) => {
-        setPrescriptions(prev => prev.map(p => (p.id === id ? { ...p, status: newStatus } : p)));
+        let targetPrescription: Prescription | undefined;
+        setPrescriptions(prev => prev.map(p => {
+            if (p.id === id) {
+                targetPrescription = { ...p, status: newStatus };
+                return targetPrescription;
+            }
+            return p;
+        }));
+
+        if (targetPrescription) {
+            dbSavePrescription(targetPrescription);
+
+            // Cross-portal inventory consistency: decrement medicine stock when prescription is dispensed
+            if (newStatus === 'Dispensed') {
+                const medNameLower = targetPrescription.medication.toLowerCase();
+                setMedicines(prevMeds => prevMeds.map(med => {
+                    if (medNameLower.includes(med.name.toLowerCase()) || med.name.toLowerCase().includes(medNameLower)) {
+                        const updatedQuantity = Math.max(0, med.quantity - 1);
+                        const updatedMed = { ...med, quantity: updatedQuantity };
+                        dbSaveMedicine(updatedMed);
+                        return updatedMed;
+                    }
+                    return med;
+                }));
+            }
+        }
+
         showNotification(`Prescription #${id.slice(-4)} status updated to "${newStatus}".`);
     };
     
     const handleAddMedicine = (newMedicineData: Omit<Medicine, 'id'>) => {
         const newMedicine: Medicine = { id: `med_${new Date().getTime()}`, ...newMedicineData };
         setMedicines(prev => [...prev, newMedicine].sort((a, b) => a.name.localeCompare(b.name)));
+        dbSaveMedicine(newMedicine);
         setAddModalOpen(false);
         showNotification(`Successfully added "${newMedicine.name}" to inventory.`);
     };
@@ -178,9 +207,9 @@ const PharmacyPortal: React.FC<PharmacyPortalProps> = ({ user, medicines, setMed
 
 const InventoryManagement: React.FC<{ medicines: Medicine[]; onAddMedicine: () => void; onSuggestAlternatives: (medicine: Medicine) => void; }> = ({ medicines, onAddMedicine, onSuggestAlternatives }) => {
     const [searchTerm, setSearchTerm] = useState('');
-    const filteredMedicines = useMemo(() => medicines.filter(med =>
-        med.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        med.category.toLowerCase().includes(searchTerm.toLowerCase())
+    const filteredMedicines = useMemo(() => (medicines || []).filter(med =>
+        (med?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (med?.category || '').toLowerCase().includes(searchTerm.toLowerCase())
     ), [medicines, searchTerm]);
 
     const getStatus = (med: Medicine): { text: string; className: string; rowClassName: string; needsSuggestion: boolean; } => {
@@ -226,7 +255,8 @@ const InventoryManagement: React.FC<{ medicines: Medicine[]; onAddMedicine: () =
                         <tr>{['Name', 'Category', 'Quantity', 'Expiry Date', 'Status', 'Actions'].map(h => <th key={h} className="text-left py-2 px-3 text-sm font-semibold text-gray-600 dark:text-gray-300">{h}</th>)}</tr>
                     </thead>
                     <tbody className="text-gray-700 dark:text-dark-text">
-                        {filteredMedicines.map(med => {
+                        {filteredMedicines.length > 0 ? (
+                          filteredMedicines.map(med => {
                             const status = getStatus(med);
                             return (
                                 <tr key={med.id} className={`border-b border-gray-200 dark:border-dark-border ${status.rowClassName}`}>
@@ -243,8 +273,19 @@ const InventoryManagement: React.FC<{ medicines: Medicine[]; onAddMedicine: () =
                                         )}
                                     </td>
                                 </tr>
-                            )
-                        })}
+                            );
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan={6} className="py-8">
+                              <EmptyState
+                                icon="💊"
+                                title="No medicines found"
+                                description={searchTerm ? "No medicines matching your search query." : "Pharmacy inventory is currently empty."}
+                              />
+                            </td>
+                          </tr>
+                        )}
                     </tbody>
                 </table>
             </div>
@@ -280,8 +321,9 @@ const Analytics: React.FC<{ medicines: Medicine[] }> = ({ medicines }) => {
                 </div>
             </div>
             <h3 className="text-lg font-semibold text-gray-800 dark:text-dark-text mb-2">Stock by Category</h3>
-            <div className="w-full h-72">
-                <ResponsiveContainer>
+            <div className="w-full min-h-72 flex items-center justify-center">
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={280}>
                     <PieChart>
                         <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#8884d8" label>
                             {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
@@ -290,6 +332,13 @@ const Analytics: React.FC<{ medicines: Medicine[] }> = ({ medicines }) => {
                         <Legend />
                     </PieChart>
                 </ResponsiveContainer>
+              ) : (
+                <EmptyState
+                  icon="📊"
+                  title="No inventory analytics available"
+                  description="Add medicine items with categories and quantities to view stock distribution."
+                />
+              )}
             </div>
         </div>
     );

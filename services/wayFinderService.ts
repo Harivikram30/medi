@@ -1,5 +1,7 @@
 import type { HospitalLocation, WayFinderRoute, NavigationStep } from '../types';
 import QRCode from 'qrcode';
+import { supabase } from './supabaseClient';
+import { saveHospitalLocation as dbSaveLocation, deleteHospitalLocation as dbDeleteLocation } from './database';
 
 const WAYFINDER_STORAGE_KEY = 'hms_wayfinder_locations';
 
@@ -359,23 +361,83 @@ export const INITIAL_HOSPITAL_LOCATIONS: HospitalLocation[] = [
   }
 ];
 
-// Load locations from localStorage or initialize with verified defaults
+let memoryLocations: HospitalLocation[] | null = null;
+let isWayfinderSubscribed = false;
+
+const initWayfinderRealtime = () => {
+  if (isWayfinderSubscribed || !supabase) return;
+  isWayfinderSubscribed = true;
+
+  supabase
+    .channel('wayfinder_realtime')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'hospital_locations' }, (payload: any) => {
+      if (payload.new) {
+        const mapped: HospitalLocation = {
+          id: payload.new.id,
+          name: payload.new.name,
+          roomNumber: payload.new.room_number,
+          floor: payload.new.floor,
+          floorName: payload.new.floor_name,
+          wing: payload.new.wing,
+          category: payload.new.category,
+          department: payload.new.department || undefined,
+          doctorName: payload.new.doctor_name || undefined,
+          description: payload.new.description,
+          isWheelchairAccessible: Boolean(payload.new.is_wheelchair_accessible),
+          coordinates: payload.new.coordinates || { x: 50, y: 50 },
+          openHours: payload.new.open_hours,
+          contactExt: payload.new.contact_ext || undefined
+        };
+        const current = getHospitalLocations();
+        const index = current.findIndex(l => l.id === mapped.id);
+        const updated = index > -1 ? current.map(l => l.id === mapped.id ? mapped : l) : [...current, mapped];
+        saveHospitalLocationsLocally(updated);
+      } else if (payload.eventType === 'DELETE' && payload.old) {
+        const current = getHospitalLocations();
+        const updated = current.filter(l => l.id !== payload.old.id);
+        saveHospitalLocationsLocally(updated);
+      }
+    })
+    .subscribe();
+};
+
+const saveHospitalLocationsLocally = (locations: HospitalLocation[]) => {
+  memoryLocations = locations;
+  try {
+    localStorage.setItem(WAYFINDER_STORAGE_KEY, JSON.stringify(locations));
+  } catch (e) {
+    console.error('Error saving wayfinder locations locally:', e);
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('mediconnect_wayfinder_updated', { detail: { locations } }));
+  }
+};
+
+// Load locations from memory, localStorage, or initialize with verified defaults
 export const getHospitalLocations = (): HospitalLocation[] => {
+  initWayfinderRealtime();
+  if (memoryLocations) return memoryLocations;
+
   try {
     const raw = localStorage.getItem(WAYFINDER_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      memoryLocations = JSON.parse(raw);
+      return memoryLocations!;
+    }
   } catch (e) {
     console.error('Error reading wayfinder locations:', e);
   }
-  return INITIAL_HOSPITAL_LOCATIONS;
+  memoryLocations = INITIAL_HOSPITAL_LOCATIONS;
+  return memoryLocations;
 };
 
 export const saveHospitalLocations = (locations: HospitalLocation[]) => {
-  try {
-    localStorage.setItem(WAYFINDER_STORAGE_KEY, JSON.stringify(locations));
-    window.dispatchEvent(new CustomEvent('mediconnect_wayfinder_updated', { detail: { locations } }));
-  } catch (e) {
-    console.error('Error saving wayfinder locations:', e);
+  saveHospitalLocationsLocally(locations);
+
+  if (supabase) {
+    locations.forEach(loc => {
+      dbSaveLocation(loc).catch(e => console.warn('Supabase location sync warning:', e));
+    });
   }
 };
 
@@ -387,6 +449,9 @@ export const addHospitalLocation = (locationData: Omit<HospitalLocation, 'id'>):
   };
   const updated = [...current, newLocation];
   saveHospitalLocations(updated);
+  if (supabase) {
+    dbSaveLocation(newLocation).catch(e => console.warn('Supabase add location warning:', e));
+  }
   return newLocation;
 };
 
@@ -396,6 +461,9 @@ export const updateHospitalLocation = (location: HospitalLocation): void => {
   if (index !== -1) {
     current[index] = location;
     saveHospitalLocations(current);
+    if (supabase) {
+      dbSaveLocation(location).catch(e => console.warn('Supabase update location warning:', e));
+    }
   }
 };
 
@@ -403,6 +471,9 @@ export const deleteHospitalLocation = (id: string): void => {
   const current = getHospitalLocations();
   const updated = current.filter(l => l.id !== id);
   saveHospitalLocations(updated);
+  if (supabase) {
+    dbDeleteLocation(id).catch(e => console.warn('Supabase delete location warning:', e));
+  }
 };
 
 export const resetDefaultLocations = (): HospitalLocation[] => {

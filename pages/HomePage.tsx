@@ -12,6 +12,12 @@ const HomePage: React.FC<HomePageProps> = ({ navigate }) => {
       {/* Hero Section */}
       <section className="bg-gradient-to-r from-primary/5 via-light to-primary/5 dark:from-dark-bg dark:via-dark-card/20 dark:to-dark-bg bg-[length:200%_200%] animate-gradientShift text-gray-800 py-20 lg:py-32">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <div className="inline-flex items-center gap-2.5 px-4 py-2 rounded-full bg-white/90 dark:bg-dark-card/90 border border-primary/20 shadow-sm mb-6 animate-fadeIn">
+            <img src="/logo-icon.png" alt="MediConnect Emblem" className="h-6 w-auto object-contain" />
+            <span className="text-xs sm:text-sm font-semibold text-gray-700 dark:text-gray-300">
+              <span className="font-bold text-primary">Medi<span className="text-secondary">Connect</span></span> • Your Health, Our Connection
+            </span>
+          </div>
           <h1 className="text-4xl md:text-6xl font-bold text-primary tracking-tight">
             Compassionate Care, Advanced Medicine
           </h1>

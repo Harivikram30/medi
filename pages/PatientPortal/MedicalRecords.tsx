@@ -3,6 +3,8 @@ import { MOCK_RECORDS } from '../../constants';
 import type { MedicalRecord, User, LabTest } from '../../types';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import EmptyState from '../../components/Common/EmptyState';
+import { formatDisplayDate } from '../../services/dataSanitizer';
 
 
 interface MedicalRecordsProps {
@@ -175,31 +177,43 @@ const MedicalRecords: React.FC<MedicalRecordsProps> = ({ patientId, user, labTes
             </tr>
           </thead>
           <tbody className="text-gray-700 dark:text-dark-text">
-            {combinedRecords.map(rec => (
-              <tr key={`${rec.source}-${rec.id}`} className="border-b border-gray-200 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-bg">
-                <td className="py-3 px-4">{new Date(rec.date).toLocaleDateString()}</td>
-                <td className="py-3 px-4">
-                  <span className="mr-2">{getIcon(rec.type)}</span>{rec.type}
-                </td>
-                <td className="py-3 px-4">{rec.title}</td>
-                <td className="py-3 px-4">{rec.doctorName}</td>
-                <td className="py-3 px-4">
-                  <button 
-                    onClick={() => {
-                        if (rec.source === 'lab' && rec.originalTest) {
-                            handleDownloadLabReportPdf(rec.originalTest);
-                        } else if (rec.source === 'mock') {
-                            handleDownloadRecordPdf(rec as MedicalRecord);
-                        }
-                    }} 
-                    disabled={rec.source === 'lab' && rec.originalTest?.status !== 'Completed'}
-                    className="text-primary dark:text-blue-400 font-semibold hover:underline disabled:text-gray-400 disabled:no-underline disabled:cursor-not-allowed"
-                  >
-                    Download PDF
-                  </button>
+            {combinedRecords.length > 0 ? (
+              combinedRecords.map(rec => (
+                <tr key={`${rec.source}-${rec.id}`} className="border-b border-gray-200 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-bg">
+                  <td className="py-3 px-4">{formatDisplayDate(rec.date)}</td>
+                  <td className="py-3 px-4">
+                    <span className="mr-2">{getIcon(rec.type)}</span>{rec.type}
+                  </td>
+                  <td className="py-3 px-4">{rec.title}</td>
+                  <td className="py-3 px-4">{rec.doctorName}</td>
+                  <td className="py-3 px-4">
+                    <button 
+                      onClick={() => {
+                          if (rec.source === 'lab' && rec.originalTest) {
+                              handleDownloadLabReportPdf(rec.originalTest);
+                          } else if (rec.source === 'mock') {
+                              handleDownloadRecordPdf(rec as MedicalRecord);
+                          }
+                      }} 
+                      disabled={rec.source === 'lab' && rec.originalTest?.status !== 'Completed'}
+                      className="text-primary dark:text-blue-400 font-semibold hover:underline disabled:text-gray-400 disabled:no-underline disabled:cursor-not-allowed"
+                    >
+                      Download PDF
+                    </button>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={5} className="py-8">
+                  <EmptyState
+                    icon="📁"
+                    title="No medical records found"
+                    description="No medical records or lab reports are available for your profile yet."
+                  />
                 </td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </div>

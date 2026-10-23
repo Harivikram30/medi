@@ -1,16 +1,44 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import type { User, AssignedPatient, Appointment } from '../../types';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import EmptyState from '../../components/Common/EmptyState';
 import { MOCK_ASSIGNED_PATIENTS, MOCK_NURSE_TASKS, MOCK_DOCTORS, MOCK_CHARTS, MOCK_APPOINTMENTS } from '../../constants';
 import PatientChartModal from '../../components/PatientChartModal';
+import { saveNursePage, saveSupplyRequest } from '../../services/database';
 
-const NursePortal: React.FC<{ user: User }> = ({ user }) => {
+interface NursePortalProps {
+  user: User;
+  appointments?: Appointment[];
+  allUsers?: User[];
+}
+
+const NursePortal: React.FC<NursePortalProps> = ({ user, appointments, allUsers }) => {
   const [activeModal, setActiveModal] = useState<'chart' | 'page' | 'supplies' | null>(null);
   const [selectedPatient, setSelectedPatient] = useState<AssignedPatient | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
+  const [nurseTasks, setNurseTasks] = useState<Array<{ id: string; text: string; completed: boolean }>>(() => {
+    return MOCK_NURSE_TASKS.map((t, i) => ({ id: `task_${i}`, text: t, completed: false }));
+  });
+
+  const doctorList = useMemo(() => {
+    if (allUsers && allUsers.length > 0) {
+      const docs = allUsers.filter(u => u.role === 'DOCTOR');
+      if (docs.length > 0) {
+        return docs.map(d => ({
+          id: d.id,
+          name: d.name,
+          specialization: d.department || 'Specialist'
+        }));
+      }
+    }
+    return MOCK_DOCTORS;
+  }, [allUsers]);
 
   const assistanceRequests = useMemo(() => {
+    if (appointments && appointments.length > 0) {
+      return appointments.filter(a => a.accessibilityRequest && a.status === 'Upcoming');
+    }
     try {
       const saved = localStorage.getItem('hms_appointments');
       const apps: Appointment[] = saved ? JSON.parse(saved) : MOCK_APPOINTMENTS;
@@ -18,7 +46,7 @@ const NursePortal: React.FC<{ user: User }> = ({ user }) => {
     } catch (e) {
       return [];
     }
-  }, []);
+  }, [appointments]);
 
   // State for Page Doctor Modal
   const [pageDoctorId, setPageDoctorId] = useState('');
@@ -49,8 +77,15 @@ const NursePortal: React.FC<{ user: User }> = ({ user }) => {
         alert("Please select a doctor and enter a message.");
         return;
     }
-    const doctor = MOCK_DOCTORS.find(d => d.id === pageDoctorId);
-    showNotification(`Successfully paged ${doctor?.name}.`);
+    const doctor = doctorList.find(d => d.id === pageDoctorId);
+    saveNursePage({
+      doctor_id: pageDoctorId,
+      doctor_name: doctor?.name,
+      message: pageMessage,
+      sender_name: user.name
+    });
+
+    showNotification(`Successfully paged ${doctor?.name || 'doctor'} via hospital intercom.`);
     setPageDoctorId('');
     setPageMessage('');
     handleCloseModal();
@@ -62,10 +97,21 @@ const NursePortal: React.FC<{ user: User }> = ({ user }) => {
         alert("Please enter a valid item and quantity.");
         return;
     }
-    showNotification(`Supply request for "${supplyItem} (x${supplyQuantity})" sent.`);
+
+    saveSupplyRequest({
+      item: supplyItem,
+      quantity: parseInt(supplyQuantity),
+      requested_by: user.name
+    });
+
+    showNotification(`Supply request for "${supplyItem} (x${supplyQuantity})" sent to Pharmacy Dispensary.`);
     setSupplyItem('');
     setSupplyQuantity('1');
     handleCloseModal();
+  };
+
+  const handleToggleTask = (taskId: string) => {
+    setNurseTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t));
   };
 
   const handleDownloadShiftReport = () => {
@@ -132,26 +178,34 @@ const NursePortal: React.FC<{ user: User }> = ({ user }) => {
                 </button>
             </div>
             <div className="space-y-4">
-              {MOCK_ASSIGNED_PATIENTS.map(patient => (
-                <div key={patient.id} className="p-4 bg-light dark:bg-dark-bg rounded-lg border-l-4 border-purple-500">
-                  <div className="flex justify-between items-start flex-wrap gap-2">
-                    <div>
-                      <p className="font-bold text-lg dark:text-dark-text">{patient.name} <span className="font-normal text-sm text-gray-500 dark:text-gray-400">- Room {patient.room}</span></p>
-                      <p className="text-sm text-purple-600 dark:text-purple-400 font-semibold">{patient.status}</p>
+              {MOCK_ASSIGNED_PATIENTS && MOCK_ASSIGNED_PATIENTS.length > 0 ? (
+                MOCK_ASSIGNED_PATIENTS.map(patient => (
+                  <div key={patient.id} className="p-4 bg-light dark:bg-dark-bg rounded-lg border-l-4 border-purple-500">
+                    <div className="flex justify-between items-start flex-wrap gap-2">
+                      <div>
+                        <p className="font-bold text-lg dark:text-dark-text">{patient.name} <span className="font-normal text-sm text-gray-500 dark:text-gray-400">- Room {patient.room}</span></p>
+                        <p className="text-sm text-purple-600 dark:text-purple-400 font-semibold">{patient.status}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => handleViewChart(patient)} className="text-sm bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300 font-semibold py-1 px-3 rounded-full hover:bg-purple-200 transition">
+                          View Chart
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => handleViewChart(patient)} className="text-sm bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300 font-semibold py-1 px-3 rounded-full hover:bg-purple-200 transition">
-                        View Chart
-                      </button>
+                    <div className="mt-2 pt-2 border-t dark:border-gray-600">
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        <span className="font-semibold">Vitals:</span> BP: {patient.vitals?.bp || 'N/A'}, Temp: {patient.vitals?.temp || 'N/A'}, HR: {patient.vitals?.hr || 'N/A'}
+                      </p>
                     </div>
                   </div>
-                  <div className="mt-2 pt-2 border-t dark:border-gray-600">
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      <span className="font-semibold">Vitals:</span> BP: {patient.vitals.bp}, Temp: {patient.vitals.temp}, HR: {patient.vitals.hr}
-                    </p>
-                  </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <EmptyState
+                  icon="🩺"
+                  title="No inpatients assigned"
+                  description="No active inpatient charts are currently assigned to this nursing station."
+                />
+              )}
             </div>
 
             {/* Verified Patient Accessibility & Assistance Queue */}
@@ -228,10 +282,18 @@ const NursePortal: React.FC<{ user: User }> = ({ user }) => {
           <div className="lg:col-span-1 bg-white dark:bg-dark-card p-6 rounded-lg shadow-md">
             <h2 className="text-xl font-semibold text-gray-800 dark:text-dark-text mb-4">Shift To-Do List</h2>
             <ul className="space-y-3">
-              {MOCK_NURSE_TASKS.map((task, index) => (
-                <li key={index} className="flex items-start p-3 bg-light dark:bg-dark-bg rounded-md">
-                  <input id={`task-${index}`} type="checkbox" className="mt-1 h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500" />
-                  <label htmlFor={`task-${index}`} className="ml-3 text-sm text-gray-700 dark:text-gray-300">{task}</label>
+              {nurseTasks.map((task) => (
+                <li key={task.id} className="flex items-start p-3 bg-light dark:bg-dark-bg rounded-md">
+                  <input 
+                    id={`task-${task.id}`} 
+                    type="checkbox" 
+                    checked={task.completed} 
+                    onChange={() => handleToggleTask(task.id)}
+                    className="mt-1 h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500" 
+                  />
+                  <label htmlFor={`task-${task.id}`} className={`ml-3 text-sm ${task.completed ? 'line-through text-gray-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                    {task.text}
+                  </label>
                 </li>
               ))}
             </ul>
@@ -260,7 +322,7 @@ const NursePortal: React.FC<{ user: User }> = ({ user }) => {
                         <label htmlFor="doctor" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Doctor</label>
                         <select id="doctor" value={pageDoctorId} onChange={e => setPageDoctorId(e.target.value)} required className="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">
                             <option value="" disabled>Select a doctor</option>
-                            {MOCK_DOCTORS.map(d => <option key={d.id} value={d.id}>{d.name} - {d.specialization}</option>)}
+                            {doctorList.map(d => <option key={d.id} value={d.id}>{d.name} - {d.specialization}</option>)}
                         </select>
                     </div>
                     <div>

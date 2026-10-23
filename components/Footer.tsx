@@ -20,6 +20,21 @@ const Footer: React.FC<FooterProps> = ({ onNavigate, user, onLoginClick }) => {
   return (
     <footer className="bg-gray-800 dark:bg-black/50 text-white">
       <div className="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-col md:flex-row items-center md:items-start justify-between gap-6 pb-8 border-b border-gray-700/80 mb-8">
+          <div className="flex items-center gap-3">
+            <img src="/logo-icon.png" alt="MediConnect Logo" className="h-12 w-auto object-contain" />
+            <div>
+              <span className="text-2xl font-bold tracking-tight text-white flex items-center">
+                Medi<span className="text-secondary">Connect</span>
+              </span>
+              <p className="text-xs text-gray-300 font-medium tracking-wider">Your Health • Our Connection</p>
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 max-w-md text-center md:text-right">
+            Comprehensive Hospital Management & Smart Navigation System combining compassionate care with modern digital medicine.
+          </p>
+        </div>
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-gray-400 tracking-wider uppercase">Quick Links</h3>

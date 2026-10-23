@@ -3,6 +3,8 @@ import React from 'react';
 import type { Prescription, User, Doctor } from '../../types';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import EmptyState from '../../components/Common/EmptyState';
+import { formatDisplayDate } from '../../services/dataSanitizer';
 
 interface PrescriptionsProps {
   user: User;
@@ -10,7 +12,7 @@ interface PrescriptionsProps {
   doctors: Doctor[];
 }
 
-const Prescriptions: React.FC<PrescriptionsProps> = ({ user, prescriptions, doctors }) => {
+const Prescriptions: React.FC<PrescriptionsProps> = ({ user, prescriptions = [], doctors = [] }) => {
 
   const handleDownloadPdf = (prescription: Prescription) => {
     try {
@@ -154,7 +156,7 @@ const Prescriptions: React.FC<PrescriptionsProps> = ({ user, prescriptions, doct
                       {p.frequency} for {p.duration}
                     </p>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                      Prescribed by {p.doctorName} on {new Date(p.date).toLocaleDateString()}
+                      Prescribed by {p.doctorName} on {formatDisplayDate(p.date)}
                     </p>
                     {p.notes && <p className="text-xs italic text-gray-500 dark:text-gray-300 mt-2">Notes: {p.notes}</p>}
                   </div>
@@ -171,7 +173,11 @@ const Prescriptions: React.FC<PrescriptionsProps> = ({ user, prescriptions, doct
             );
           })
         ) : (
-          <p className="text-gray-500 dark:text-gray-400">You have no prescriptions on record.</p>
+          <EmptyState
+            icon="💊"
+            title="No prescriptions found"
+            description="You have no active or completed medical prescriptions on record."
+          />
         )}
       </div>
     </div>

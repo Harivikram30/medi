@@ -3,6 +3,8 @@ import type { Appointment, User } from '../../types';
 import TelemedicineModal from './TelemedicineModal';
 import BookingModal from './BookingModal';
 import ConfirmationModal from '../../components/ConfirmationModal';
+import EmptyState from '../../components/Common/EmptyState';
+import { formatDisplayDate } from '../../services/dataSanitizer';
 
 interface AppointmentsProps {
   user: User;
@@ -13,10 +15,10 @@ interface AppointmentsProps {
 
 const Appointments: React.FC<AppointmentsProps> = ({ user, appointments, setAppointments, onNavigateQueue }) => {
   const patientAppointments = useMemo(() => {
-    return appointments
-      .filter(app => app.patientId === user.id)
+    return (appointments || [])
+      .filter(app => app && app.patientId === user?.id)
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [appointments, user.id]);
+  }, [appointments, user?.id]);
   
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [isBookingModalOpen, setBookingModalOpen] = useState(false);
@@ -152,7 +154,7 @@ const Appointments: React.FC<AppointmentsProps> = ({ user, appointments, setAppo
                     'text-gray-500 dark:text-gray-400'
                 }`}>{app.status}</p>
                 <p className="text-lg font-bold text-gray-900 dark:text-dark-text">{app.doctorSpecialization} with {app.doctorName}</p>
-                <p className="text-gray-600 dark:text-gray-300">{new Date(app.date  + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} at {app.time}</p>
+                <p className="text-gray-600 dark:text-gray-300">{formatDisplayDate(app.date, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} at {app.time}</p>
                 
                 {app.accessibilityRequest && (
                   <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-xs">
@@ -194,7 +196,16 @@ const Appointments: React.FC<AppointmentsProps> = ({ user, appointments, setAppo
             </div>
           ))
         ) : (
-          <p className="text-gray-500 dark:text-gray-400">You have no appointments scheduled.</p>
+          <EmptyState
+            icon="📅"
+            title="No appointments scheduled"
+            description="You do not have any upcoming consultations. You can book an appointment with our hospital specialists anytime."
+            actionText="Book New Appointment"
+            onAction={() => {
+              setReschedulingAppointmentId(null);
+              setBookingModalOpen(true);
+            }}
+          />
         )}
       </div>
       
